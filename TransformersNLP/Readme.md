@@ -1,0 +1,1 @@
+This is the project to pretrain and finetune both the baseline and NoRBERT on any of its variants, with BERT, RoBERTa and XLM-R. The main scripts are run_language_modeling_bleu.py and train_NoRBERT.py, both for training the models.
