@@ -1,6 +1,6 @@
 '''
 
-Implementation of Top NoRxlmRoBERTa (Noisy Regulagarized xlm RoBERTa), which applies a GM-VAE between the Encoder and the output layer
+Implementation of Top NoRxlmRoBERTa (Noisy Regularized xlm RoBERTa), which applies a GM-VAE between the Encoder and the output layer
 from ROBERTA, and Deep NoRxlmRoBERTa, which applies a GM-VAE between the Encoder layers from ROBERTA.
 It substitutes the files NoRxlmRoBERTa and DeepNoRxlmRoBERTa due to library updates.
 
