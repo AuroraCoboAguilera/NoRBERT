@@ -1,138 +1,104 @@
-from torch.utils.data import DataLoader
-from lineTextDataset import LineTextDataset
-from DeepNoRBERT import DeepNoRBERT
-import torch.nn as nn
-import torch
-import torch.optim as optim
-import numpy as np
-import os
+'''
 
+This is a script to save the DEEP hidden vectors from the Transformer to be used as training samples in the Generative model.
+ONLY FOR BERT MODELS
+
+layer_deep: The depth of the layer to same the hidden vectors from
+size_vae_dataset: -1 if using the complete dataset, if not an integer with the number of sentences to consider in the training set. The validation is completely computed.
+
+Author: Aurora Cobo Aguilera
+Date: 2021/05/14
+Update: 2022/02/18
+
+'''
+
+# EXAMPLES with an own file and with a GLUE dataset.
+# CUDA_VISIBLE_DEVICES=3 python saveDeepHiddenState.py --model_type "bert" --model_name_or_path "./models/bert-base-uncased_sst2_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/SST2/train.csv" --eval_data_file "./dataset/SST2/dev.csv" --output_dir "./results/bert-base-uncased_sst2_10epochs/"
+# CUDA_VISIBLE_DEVICES=3 python saveDeepHiddenState.py --model_type "bert" --model_name_or_path "./models/bert-base-uncased_trec_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/TREC/train.csv" --eval_data_file "./dataset/TREC/dev.csv" --output_dir "./results/bert-base-uncased_trec_10epochs/"
+# CUDA_VISIBLE_DEVICES=0 python saveDeepHiddenState.py --model_type "bert" --model_name_or_path "./models/bert-base-uncased_multi30k_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/multi30k/multi30k_train.txt" --eval_data_file "./dataset/multi30k/multi30k_test.txt" --output_dir "./results/bert-base-uncased_multi30k_10epochs/"
+# CUDA_VISIBLE_DEVICES=1 python saveDeepHiddenState.py --model_type "roberta" --model_name_or_path "./models/roberta-base_sst2_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/SST2/train.csv" --eval_data_file "./dataset/SST2/dev.csv" --output_dir "./results/roberta-base_sst2_10epochs/"
+# CUDA_VISIBLE_DEVICES=3 python saveDeepHiddenState.py --model_type "roberta" --model_name_or_path "./models/roberta-base_trec_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/TREC/train.csv" --eval_data_file "./dataset/TREC/dev.csv" --output_dir "./results/roberta-base_trec_10epochs/"
+# CUDA_VISIBLE_DEVICES=1 python saveDeepHiddenState.py --model_type "xlm-roberta" --model_name_or_path "./models/xlm-roberta-base_sst2_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=16 --per_device_eval_batch_size 16 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/SST2/train.csv" --eval_data_file "./dataset/SST2/dev.csv" --output_dir "./results/xlm-roberta-base_sst2_10epochs/"
+# CUDA_VISIBLE_DEVICES=3 python saveDeepHiddenState.py --model_type "xlm-roberta" --model_name_or_path "./models/xlm-roberta-base_trec_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=32 --per_device_eval_batch_size 32 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/TREC/train.csv" --eval_data_file "./dataset/TREC/dev.csv" --output_dir "./results/xlm-roberta-base_trec_10epochs/"
+# CUDA_VISIBLE_DEVICES=3 python saveDeepHiddenState.py --model_type "roberta" --model_name_or_path "./models/roberta-base_multi30k_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/multi30k/multi30k_train.txt" --eval_data_file "./dataset/multi30k/multi30k_test.txt" --output_dir "./results/roberta-base_multi30k_10epochs/"
+# CUDA_VISIBLE_DEVICES=1 python saveDeepHiddenState.py --model_type "xlm-roberta" --model_name_or_path "./models/xlm-roberta-base_multi30k_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=32 --per_device_eval_batch_size 32 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/multi30k/multi30k_train.txt" --eval_data_file "./dataset/multi30k/multi30k_test.txt" --output_dir "./results/xlm-roberta-base_multi30k_10epochs/"
+
+
+from models_NoRBERT import DeepNoRBERT
+from models_NoRoBERTa import DeepNoRoBERTa
+from models_NoRxlmRoBERTa import DeepNoRxlmRoBERTa
+from utils import *
+from transformers import HfArgumentParser, AutoTokenizer, DataCollatorForLanguageModeling, TrainingArguments
 import h5py
 
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
+device, num_workers = set_device()
 
-#dataset = 1
-
-# low_deep=False
-layer_deep = None
-
-#model_path = 'bert-base-uncased'
-#model_name = 'BERT_base'
-
-#model_path = './models/prueba1'
-#model_name = 'BERT_prueba1'
-
-#model_path = './models/bert_base_dataset14'
-#model_name = 'bert_base_retrained_dataset14'
+parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, NoRBERTArguments))
+model_args, data_args, training_args, norbert_args = parser.parse_args_into_dataclasses()
 
 
-# dataset = 'snli'
-# model_path = 'bert-base-uncased'
-# model_name = 'bert_base_snli_50000'
+# Configure results directory
+results_dir = training_args.output_dir
+create_dir(results_dir)
 
-# dataset = 'snli'
-# model_path = './models/bert_retrained_snli/checkpoint-92500'
-# model_name = 'bert_retrained_snli_50000'
+tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
 
-# dataset = 'snli'
-# model_path = 'bert-base-uncased'
-# model_name = 'bert_base_snli_50000'
-# layer_deep = 3
+# Configure and load dataset
+train_dataset = get_dataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir)
+eval_dataset = get_dataset(data_args, tokenizer=tokenizer, evaluate=True, cache_dir=model_args.cache_dir)
 
-# dataset = 'snli'
-# model_path = 'bert-base-uncased'
-# model_name = 'bert_base_snli_50000'
-# layer_deep = 9
-
-# dataset = 'snli'
-# model_path = 'bert-base-uncased'
-# model_name = 'bert_base_snli_50000'
-# layer_deep = 11
-
-dataset = 'snli'
-model_path = 'bert-base-uncased'
-model_name = 'bert_base_snli_50000'
-layer_deep = 1
-
-# dataset = 1
-# model_path = 'bert-large-uncased'#'bert-base-uncased'
-# model_name = 'bert_large_multi30k'#'bert_base_multi30k'
-# layer_deep = 1#2#1#12#3#9#11
-
-
-# dataset = 1
-# model_path = './models/bert_retrained_multi30k'
-# model_name = 'bert_retrained_multi30k'
-# layer_deep = 3#11#3
-
-
-maxlen = 100
-maxsentences = 50000
-
-# Creating instances of training and validation set
-if dataset == 1:
-    train_set = LineTextDataset(filename='./dataset/multi30k/multi30k_train.txt', filename_true='./dataset/multi30k/multi30k_train.txt', maxlen=maxlen, model_name=model_path, eval_mode=True)
-    val_set = LineTextDataset(filename='./dataset/multi30k/multi30k_test.txt', filename_true='./dataset/multi30k/multi30k_test.txt', maxlen=maxlen, model_name=model_path, eval_mode=True)
-    data_name = 'multi30k'
-elif dataset == 13:
-    train_set = LineTextDataset(filename='./dataset/multi30k/multi30k_train_unk.txt', filename_true='./dataset/multi30k/multi30k_train_true.txt', maxlen=maxlen, model_name=model_path, change_unk_token=True, eval_mode=True)
-    val_set = LineTextDataset(filename='./dataset/multi30k/multi30k_test_unk.txt', filename_true='./dataset/multi30k/multi30k_test_true.txt', maxlen=maxlen, model_name=model_path, change_unk_token=True, eval_mode=True)
-    data_name = 'multi30k_unk'
-elif dataset == 14:
-    train_set = LineTextDataset(filename='./dataset/multi30k/multi30k_train_unk06.txt', filename_true='./dataset/multi30k/multi30k_train_true.txt', maxlen=maxlen, model_name=model_path, change_unk_token=True, eval_mode=True)
-    val_set = LineTextDataset(filename='./dataset/multi30k/multi30k_test_unk06.txt', filename_true='./dataset/multi30k/multi30k_test_true.txt', maxlen=maxlen, model_name=model_path, change_unk_token=True, eval_mode=True)
-    data_name = 'multi30k_unk06'
-elif dataset == 'snli':
-    train_set = LineTextDataset(filename='./dataset/data_snli/train.txt', filename_true='./dataset/data_snli/train.txt', maxlen=maxlen, model_name=model_path, eval_mode=True)
-    val_set = LineTextDataset(filename='./dataset/data_snli/test.txt', filename_true='./dataset/data_snli/test.txt', maxlen=maxlen, model_name=model_path, eval_mode=True)
-    data_name = 'snli'
-
-
-if len(train_set) < maxsentences:
-    maxsentences = len(train_set)
+data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=data_args.mlm, mlm_probability=data_args.mlm_probability)
 
 # Creating instances of training and validation dataloaders
-train_loader = DataLoader(train_set, batch_size=50, num_workers=5, shuffle=True)
-val_loader = DataLoader(val_set, batch_size=50, num_workers=5, shuffle=False)
+train_loader = DataLoader(train_dataset, collate_fn=data_collator, batch_size=training_args.per_device_train_batch_size, num_workers=num_workers, shuffle=True)
+val_loader = DataLoader(eval_dataset, collate_fn=data_collator, batch_size=training_args.per_device_train_batch_size, num_workers=num_workers, shuffle=False)
+
+maxsentences = norbert_args.size_vae_dataset
+layer_deep = norbert_args.layer_deep
+model_path = model_args.model_name_or_path
 
 
-#configuration = BertConfig()
+if len(train_dataset) < maxsentences or maxsentences == -1:
+    maxsentences = len(train_dataset)
 
 
 # Load the pre-trained BERT model
-model = DeepNoRBERT.from_pretrained(model_path, GMVAE_model=None, save_deep_hidden_state=True, layer_deep=layer_deep, from_tf=bool(".ckpt" in model_path), output_hidden_states=True, output_attentions=True)
+if model_args.model_type == "bert":
+    model = DeepNoRBERT.from_pretrained(model_path, GMVAE_model=None, save_deep_hidden_state=True, layer_deep=layer_deep, from_tf=bool(".ckpt" in model_path), output_hidden_states=True, output_attentions=True)
+elif model_args.model_type == "roberta":
+    model = DeepNoRoBERTa.from_pretrained(model_path, GMVAE_model=None, save_deep_hidden_state=True, layer_deep=layer_deep, from_tf=bool(".ckpt" in model_path), output_hidden_states=True, output_attentions=True)
+elif model_args.model_type == "xlm-roberta":
+    model = DeepNoRxlmRoBERTa.from_pretrained(model_path, GMVAE_model=None, save_deep_hidden_state=True, layer_deep=layer_deep, from_tf=bool(".ckpt" in model_path), output_hidden_states=True, output_attentions=True)
 
-# Configure results directory
-results_dir = './results/dataset{}/{}/'.format(dataset, model_name)
-directory, filename = os.path.split(os.path.abspath(results_dir))
-if not os.path.exists(results_dir):
-    os.makedirs(results_dir)
+# Change model to cpu/gpu
+model = model.to(device)
 
-maxit = np.floor(maxsentences / 50)
+# Evaluation mode
+model.eval()
+
+print('Process to save {}/{} from training dataset'.format(maxsentences, len(train_dataset)))
+
+maxit = int(np.floor(maxsentences / training_args.per_device_train_batch_size))
 # Evaluate and save training samples
-for it, (tokens, _, _, _, _) in enumerate(train_loader):
-
-    input_ids = tokens['input_ids'].squeeze()
-    token_type_ids = tokens['token_type_ids'].squeeze()
-    attention_mask = tokens['attention_mask'].squeeze()
-
-    # Converting these to cuda tensors
-    #seq, attn_masks, labels = seq.cuda(args.gpu), attn_masks.cuda(args.gpu), labels.cuda(args.gpu)
-
-    # Evaluation mode
-    model.eval()
+for it, tokens in enumerate(train_loader):
+    # Converting these to cuda tensors if possible
+    input_ids = tokens['input_ids'].to(device)
+    labels = tokens['labels'].to(device)
+    attention_mask = tokens['attention_mask'].to(device)
 
     # Predict all tokens
     with torch.no_grad():
-        _, _, _, deep_hidden_state = model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+        masked_lm_output = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        deep_hidden_state = masked_lm_output.deep_hidden_state
     if it == 0:
         saved_deep_hidden_state = np.copy(deep_hidden_state[attention_mask == 1].cpu())
     else:
         saved_deep_hidden_state = np.concatenate((saved_deep_hidden_state, deep_hidden_state[attention_mask == 1].cpu()), axis=0)
 
-    if (it + 1) % 10 == 0:
+    if (it + 1) % 25 == 0:
         print("Iteration {}/{} completed at training. ".format(it + 1, maxit))
 
     if it+1 == maxit:
@@ -150,40 +116,35 @@ with h5py.File(decoded_file_name, 'w') as f:
     dset = f.create_dataset("default", data=saved_deep_hidden_state)
 
 
+print('Process to save {} from validation dataset'.format(len(eval_dataset)))
 
 # Evaluate and save test samples
+for it, tokens in enumerate(val_loader):
+    # Converting these to cuda tensors if possible
+    input_ids = tokens['input_ids'].to(device)
+    labels = tokens['labels'].to(device)
+    attention_mask = tokens['attention_mask'].to(device)
 
-for it, (tokens, _, _, _, _) in enumerate(val_loader):
-
-    input_ids = tokens['input_ids'].squeeze()
-    token_type_ids = tokens['token_type_ids'].squeeze()
-    attention_mask = tokens['attention_mask'].squeeze()
-
-    # Converting these to cuda tensors
-    # seq, attn_masks, labels = seq.cuda(args.gpu), attn_masks.cuda(args.gpu), labels.cuda(args.gpu)
-
-    # Evaluation mode
-    model.eval()
 
     # Predict all tokens
     with torch.no_grad():
-        _, _, _, deep_hidden_state = model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+        masked_lm_output = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        deep_hidden_state = masked_lm_output.deep_hidden_state
 
     if it == 0:
         saved_deep_hidden_state = np.copy(deep_hidden_state[attention_mask == 1].cpu())
-
     else:
         saved_deep_hidden_state = np.concatenate((saved_deep_hidden_state, deep_hidden_state[attention_mask == 1].cpu()), axis=0)
 
-    if (it + 1) % 10 == 0:
+    if (it + 1) % 25 == 0:
         print("Iteration {}/{} completed at testing. ".format(it + 1, len(val_loader)))
 
 
 # creating a HDF5 file
 if layer_deep != None:
-    decoded_file_name = results_dir + '{}deepHiddenState_{}_test.hdf5'.format(layer_deep, len(val_set))
+    decoded_file_name = results_dir + '{}deepHiddenState_{}_test.hdf5'.format(layer_deep, len(eval_dataset))
 else:
-    decoded_file_name = results_dir + 'deepHiddenState_{}_test.hdf5'.format(len(val_set))
+    decoded_file_name = results_dir + 'deepHiddenState_{}_test.hdf5'.format(len(eval_dataset))
 print('Saving file of shape: ' + str(saved_deep_hidden_state.shape))
 with h5py.File(decoded_file_name, 'w') as f:
     dset = f.create_dataset("default", data=saved_deep_hidden_state)
