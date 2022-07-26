@@ -11,4 +11,8 @@ For evaluation:
 python run_language_modeling_bleu.py --model_type "bert" --model_name_or_path "./models/bert-base-uncased_sst2_10epochs/" --line_by_line --train_data_file "./dataset/SST2/train.csv" --eval_data_file "./dataset/SST2/dev.csv" --output_dir "./models/bert-base-uncased_sst2_10epochs_eval_mlm015/" --mlm --mlm_probability 0.15 --per_device_train_batch_size 64 --per_device_eval_batch_size 64 --do_eval --eval_accumulation_steps 3
 
 For saving hidden vectors:
+
 python saveDeepHiddenState.py --model_type "bert" --model_name_or_path "./models/bert-base-uncased_sst2_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --layer_deep 1 --line_by_line --train_data_file "./dataset/SST2/train.csv" --eval_data_file "./dataset/SST2/dev.csv" --output_dir "./results/bert-base-uncased_sst2_10epochs/"
+
+python saveTopHiddenState.py --model_type "bert" --model_name_or_path "./models/bert-base-uncased_sst2_10epochs/" --mlm --mlm_probability 0.15 --per_device_train_batch_size=64 --per_device_eval_batch_size 64 --block_size 150 --line_by_line --train_data_file "./dataset/SST2/train.csv" --eval_data_file "./dataset/SST2/dev.csv" --output_dir "./results/bert-base-uncased_sst2_10epochs/"
+
